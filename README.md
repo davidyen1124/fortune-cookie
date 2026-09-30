@@ -5,6 +5,8 @@
 
 ![A fortune cookie snapped in half on a white table, with the slip between the halves](public/social-preview.jpg)
 
+**🥠 Crack one open: <https://fortune-cookie-khaki.vercel.app>**
+
 ## What it does
 
 1. A fresh cookie drops onto a seamless studio table and settles on its own.
@@ -61,3 +63,7 @@ node tests/shots.mjs    http://127.0.0.1:5288/      # stage-by-stage screenshots
 node tests/realtime.mjs http://127.0.0.1:5288/ 390x844x3 3 webkit   # real taps, real clock
 node tests/video.mjs    http://127.0.0.1:5288/ 390x844x2 5 3        # frame-by-frame video of a crack
 ```
+
+## Deploying
+
+The Vercel project `fortune-cookie` is connected to this repository: every push to `main` builds with Vite and goes live at <https://fortune-cookie-khaki.vercel.app>. The `.vercelignore` keeps the reference library, renders and Blender files out of CLI uploads.

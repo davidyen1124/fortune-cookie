@@ -459,7 +459,7 @@ function readingPose() {
   // in front of the camera: as wide as the screen allows, a little above centre
   const vf = THREE.MathUtils.degToRad(camera.fov);
   const hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
-  const fw = camera.aspect < 1 ? 0.92 : Math.min(0.46, 0.9 / camera.aspect);
+  const fw = camera.aspect < 1 ? 0.86 : Math.min(0.46, 0.9 / camera.aspect);
   let d = SLIP.L / fw / (2 * Math.tan(hf / 2));
   d = Math.max(d, (SLIP.W / 0.4) / (2 * Math.tan(vf / 2)));
   const yN = camera.aspect < 1 ? 0.3 : 0.34; // NDC height of its centre
