@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
-import { createBackdrop, ContactShadows, shadowCatcher, LAYER_CAST } from './stage.js';
+import { createBackdrop, ContactShadows, shadowCatcher, FocusBlur, LAYER_CAST } from './stage.js';
+
+const LAYER_SLIP = 2; // drawn after the depth-of-field pass, so it stays sharp
 import { CookieAudio } from './audio.js';
 import { drawFortune, LEARN_CHINESE } from './fortunes.js';
 import { SLIP, slipTextures, wrinkled, slipGeometry, inCrease, setFiber, slipShadowTexture } from './paper.js';
@@ -38,6 +40,8 @@ renderer.setClearColor(BG, 1);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(26, 1, 0.02, 5);
 camera.layers.enable(LAYER_CAST);
+camera.layers.enable(LAYER_SLIP);
+const focus = { blur: null, amount: 0 };
 
 // ------------------------------------------------------------------ loading
 function progress(f, note) {
@@ -156,7 +160,9 @@ function buildScene(parts) {
   sc.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
   Object.assign(sc.camera, { left: -0.16, right: 0.16, top: 0.16, bottom: -0.16, near: 0.2, far: 1.0 });
   sc.radius = 14; sc.blurSamples = 12; sc.bias = -0.0002;
+  keyLight.layers.enable(LAYER_SLIP);
   scene.add(keyLight, keyLight.target);
+  focus.blur = new FocusBlur(renderer);
   catcher = shadowCatcher(1.2, 0.3);
   scene.add(catcher);
   paperShadow = new THREE.Mesh(new THREE.PlaneGeometry(SLIP.L * 1.12, SLIP.W * 1.5), new THREE.MeshBasicMaterial({ map: slipShadowTexture(), color: 0x2a2018, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
@@ -402,7 +408,7 @@ function makePaper(f) {
   for (const m of [frontMat, backMat]) {
     const mesh = new THREE.Mesh(geo, m);
     mesh.castShadow = true;
-    mesh.layers.enable(LAYER_CAST);
+    mesh.layers.set(LAYER_SLIP);
     group.add(mesh);
   }
   group.visible = false;
@@ -618,6 +624,10 @@ function advance(dt) {
     }
   }
   aimCamera(dt, state.time);
+  // focus pulls to the slip once it is up in front of the lens
+  const FP = round.paper;
+  const want = FP && FP.released && state.mode !== 'clearing' ? ease((FP.t - 0.9) / 0.9) : 0;
+  focus.amount += (want - focus.amount) * (1 - Math.exp(-dt * 7));
   catcher.userData.center.set(cam.target.x, cam.target.z);
   backdrop.uniforms.time.value = state.time;
 }
@@ -652,7 +662,23 @@ function render() {
     renderer.shadowMap.needsUpdate = true;
     shadowsFresh++;
   }
+  if (focus.amount < 0.01 || params.has('nodof')) {
+    renderer.render(scene, camera);
+    return;
+  }
+  const mask = camera.layers.mask;
+  camera.layers.disable(LAYER_SLIP);
   renderer.render(scene, camera);
+  const dpr = renderer.getPixelRatio();
+  focus.blur.apply(Math.min(0.9, focus.amount), 4.2 * dpr);
+  // the slip, sharp, over the soft table
+  const auto = renderer.autoClear;
+  renderer.autoClear = false;
+  renderer.clearDepth();
+  camera.layers.set(LAYER_SLIP);
+  renderer.render(scene, camera);
+  camera.layers.mask = mask;
+  renderer.autoClear = auto;
 }
 
 let last = performance.now();
@@ -762,10 +788,15 @@ $('btnSound').addEventListener('click', () => {
     renderer.compile(scene, camera);
     {
       // compile the fade materials now rather than at the first "another cookie"
-      const probe = new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.001, 0.001), crustFade);
-      const probe2 = new THREE.Mesh(probe.geometry, crumbFade);
-      probe.position.y = probe2.position.y = -1;
-      scene.add(probe, probe2); renderer.compile(scene, camera); scene.remove(probe, probe2);
+      // (and the broken-edge material, first seen at the first crack)
+      const box = new THREE.BoxGeometry(0.001, 0.001, 0.001);
+      const probes = [crustFade, crumbFade, crumbMat].map((m) => { const o = new THREE.Mesh(box, m); o.position.set(0, 0.02, 0); o.castShadow = true; return o; });
+      scene.add(...probes);
+      renderer.shadowMap.needsUpdate = true;
+      renderer.compile(scene, camera);
+      renderer.render(scene, camera);
+      scene.remove(...probes);
+      focus.blur.apply(0); // compile the depth-of-field passes
     }
     render();
     $('loading').classList.add('hidden');

@@ -150,3 +150,88 @@ export function shadowCatcher(size = 1.2, opacity = 0.32, color = 0x3a2a1c, fade
   mesh.userData.center = center.value;
   return mesh;
 }
+
+/**
+ * Shallow depth of field for the moment the slip is up close: the table behind it (the
+ * halves, the crumbs) goes soft, as it would through a macro lens focused on the paper.
+ * The scene is drawn as usual, copied, blurred at half size and put back, then the slip
+ * is drawn sharp on top. Works on the display-ready image, so no change to tone mapping.
+ */
+export class FocusBlur {
+  constructor(renderer) {
+    this.renderer = renderer;
+    this.size = new THREE.Vector2();
+    this.copy = null;
+    const rt = () => new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
+    this.a = rt(); this.b = rt();
+    const vert = 'varying vec2 vUv; void main(){ vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+    this.blur = new THREE.ShaderMaterial({
+      uniforms: { src: { value: null }, dir: { value: new THREE.Vector2() } },
+      vertexShader: vert,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D src; uniform vec2 dir; varying vec2 vUv;
+        void main() {
+          vec4 c = texture2D(src, vUv) * 0.2270270270;
+          c += (texture2D(src, vUv + dir * 1.3846153846) + texture2D(src, vUv - dir * 1.3846153846)) * 0.3162162162;
+          c += (texture2D(src, vUv + dir * 3.2307692308) + texture2D(src, vUv - dir * 3.2307692308)) * 0.0702702703;
+          gl_FragColor = c;
+        }`,
+      depthTest: false, depthWrite: false, toneMapped: false,
+    });
+    this.out = new THREE.ShaderMaterial({
+      uniforms: { src: { value: null }, sharp: { value: null }, amount: { value: 0 } },
+      vertexShader: vert,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D src; uniform sampler2D sharp; uniform float amount; varying vec2 vUv;
+        void main() { gl_FragColor = mix(texture2D(sharp, vUv), texture2D(src, vUv), amount); }`,
+      depthTest: false, depthWrite: false, toneMapped: false,
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+    this.quad = new THREE.Mesh(geo, this.blur);
+    this.quad.frustumCulled = false;
+    this.qScene = new THREE.Scene();
+    this.qScene.add(this.quad);
+    this.qCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  }
+
+  #resize() {
+    const r = this.renderer;
+    r.getDrawingBufferSize(this.size);
+    const w = this.size.x, h = this.size.y;
+    if (this.copy && this.copy.image.width === w && this.copy.image.height === h) return;
+    this.copy?.dispose();
+    this.copy = new THREE.FramebufferTexture(w, h);
+    this.a.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+    this.b.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1));
+  }
+
+  /** blur what is on screen right now by `amount` (0..1); radius in drawing-buffer pixels */
+  apply(amount, radius = 7) {
+    const r = this.renderer;
+    this.#resize();
+    r.copyFramebufferToTexture(this.copy);
+    const prevAuto = r.autoClear;
+    r.autoClear = false;
+    let src = this.copy;
+    const w = this.a.width, h = this.a.height;
+    this.quad.material = this.blur;
+    for (let i = 0; i < 2; i++) {
+      const s = (radius / 2) * (i ? 0.55 : 1);
+      this.blur.uniforms.src.value = src;
+      this.blur.uniforms.dir.value.set(s / w, 0);
+      r.setRenderTarget(this.a); r.render(this.qScene, this.qCam);
+      this.blur.uniforms.src.value = this.a.texture;
+      this.blur.uniforms.dir.value.set(0, s / h);
+      r.setRenderTarget(this.b); r.render(this.qScene, this.qCam);
+      src = this.b.texture;
+    }
+    r.setRenderTarget(null);
+    this.quad.material = this.out;
+    this.out.uniforms.src.value = this.b.texture;
+    this.out.uniforms.sharp.value = this.copy;
+    this.out.uniforms.amount.value = amount;
+    r.render(this.qScene, this.qCam);
+    r.autoClear = prevAuto;
+  }
+}
