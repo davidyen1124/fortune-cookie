@@ -32,6 +32,7 @@ renderer.toneMapping = THREE.NeutralToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.VSMShadowMap;
+renderer.shadowMap.autoUpdate = false; // see render()
 renderer.setClearColor(BG, 1);
 
 const scene = new THREE.Scene();
@@ -122,7 +123,7 @@ async function loadChineseFont() {
 }
 
 // ------------------------------------------------------------------ world
-let meta, physics, backdrop, contact, catcher, paperShadow, keyLight, crustMat, crumbMat, src = {};
+let meta, physics, backdrop, contact, catcher, paperShadow, keyLight, crustMat, crumbMat, crustFade, crumbFade, src = {};
 const round = { whole: null, pieces: [], crumbs: [], paper: null, gen: 0 };
 const fading = []; // old rounds on their way out
 const state = {
@@ -154,7 +155,7 @@ function buildScene(parts) {
   const sc = keyLight.shadow;
   sc.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
   Object.assign(sc.camera, { left: -0.16, right: 0.16, top: 0.16, bottom: -0.16, near: 0.2, far: 1.0 });
-  sc.radius = 14; sc.blurSamples = 20; sc.bias = -0.0002;
+  sc.radius = 14; sc.blurSamples = 12; sc.bias = -0.0002;
   scene.add(keyLight, keyLight.target);
   catcher = shadowCatcher(1.2, 0.3);
   scene.add(catcher);
@@ -185,6 +186,10 @@ function buildScene(parts) {
   ct.repeat.set(1, 1);
   crumbMat = new THREE.MeshStandardMaterial({ map: ct, roughness: 0.85, metalness: 0, color: 0xf6e7c8 });
   setFiber(parts.fiber);
+  // see-through twins for clearing the table (compiled up front, shared by every fade)
+  crustFade = crustMat.clone(); crustFade.transparent = true;
+  crustFade.onBeforeCompile = crustMat.onBeforeCompile;
+  crumbFade = crumbMat.clone(); crumbFade.transparent = true; crumbFade.depthWrite = false;
 
   // one node per object (a node with two primitives, crust + broken edge, loads as a group).
   // Keep the node itself: meshopt quantisation stores the dequantising scale on it.
@@ -337,7 +342,9 @@ function crack() {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rng() * 6.28, rng() * 6.28, rng() * 6.28));
     const rec = physics.add({ hull: c.hull, mass: c.mass }, { p: pos, q }, { lin, ang, scale, group: Phys.GROUP.CRUMB, filter: Phys.GROUP.FLOOR | Phys.GROUP.PIECE_A | Phys.GROUP.PIECE_B, restitution: 0.35, kind: 'crumb' });
     rec.kind = 'crumb';
-    round.crumbs.push(track(meshFor(c.name, { scale }), rec));
+    const cm = meshFor(c.name, { scale });
+    cm.traverse((m) => { if (m.isMesh) m.castShadow = false; });
+    round.crumbs.push(track(cm, rec));
   }
   // the slip rides out with one half
   const holder = round.pieces[rng() < 0.5 ? 0 : 1];
@@ -388,8 +395,9 @@ function makePaper(f) {
     _v.set(bent[k * 3], bent[k * 3 + 1], bent[k * 3 + 2]).sub(c).applyMatrix4(R0i);
     bentLocal[k * 3] = _v.x; bentLocal[k * 3 + 1] = _v.y; bentLocal[k * 3 + 2] = _v.z;
   }
-  const frontMat = new THREE.MeshStandardMaterial({ map: tex.front, roughness: 0.88, metalness: 0, side: THREE.FrontSide });
-  const backMat = new THREE.MeshStandardMaterial({ map: tex.back, roughness: 0.88, metalness: 0, side: THREE.BackSide });
+  // transparent from the start, so fading it out later doesn't recompile its shader
+  const frontMat = new THREE.MeshStandardMaterial({ map: tex.front, roughness: 0.88, metalness: 0, side: THREE.FrontSide, transparent: true });
+  const backMat = new THREE.MeshStandardMaterial({ map: tex.back, roughness: 0.88, metalness: 0, side: THREE.BackSide, transparent: true });
   const group = new THREE.Group();
   for (const m of [frontMat, backMat]) {
     const mesh = new THREE.Mesh(geo, m);
@@ -501,6 +509,7 @@ function updatePaper(P, dt, time) {
   paperShadow.quaternion.copy(camera.quaternion).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), P.tilt));
   P.group.visible = true;
   if (!P.rustled && t > T0) { P.rustled = true; audio.rustle(0.7, 1); }
+  if (t > 0.9 && P.group.children[0].castShadow) for (const m of P.group.children) m.castShadow = false;
   if (t > T1 && state.mode === 'broken') {
     state.mode = 'reading';
     ui('reading');
@@ -599,12 +608,11 @@ function advance(dt) {
       const P = f.paper;
       P.group.position.addScaledVector(_v2.set(0, 1, 0), dt * (0.1 + f.t * 0.6));
       P.group.rotateZ(dt * 1.5);
-      P.frontMat.transparent = P.backMat.transparent = true;
       P.frontMat.opacity = P.backMat.opacity = 1 - k;
     }
     for (const it of f.items) setOpacity(it.mesh, 1 - k);
     if (k >= 1) {
-      for (const it of f.items) { physics.remove(it.rec); scene.remove(it.mesh); disposeFade(it.mesh); }
+      for (const it of f.items) { physics.remove(it.rec); scene.remove(it.mesh); }
       if (f.paper) disposePaper(f.paper);
       fading.splice(i, 1);
     }
@@ -617,19 +625,33 @@ function advance(dt) {
 function setOpacity(g, o) {
   g.traverse((m) => {
     if (!m.isMesh) return;
-    if (!m.userData.fade) { m.material = m.material.clone(); m.material.transparent = true; m.userData.fade = true; }
-    m.material.opacity = o;
-    m.castShadow = o > 0.5;
+    if (!m.userData.fade) { m.material = m.material === crumbMat ? crumbFade : crustFade; m.userData.fade = true; }
+    m.castShadow = false;
   });
+  crustFade.opacity = crumbFade.opacity = o;
 }
-function disposeFade(g) { g.traverse((m) => { if (m.isMesh && m.userData.fade) m.material.dispose(); }); }
 function disposePaper(P) {
   scene.remove(P.group);
   P.geo.dispose(); P.tex.front.dispose(); P.tex.back.dispose(); P.frontMat.dispose(); P.backMat.dispose();
 }
 
+// Shadows only need redrawing while something near the table moves; once the cookie (or
+// the pieces and crumbs) are at rest and the slip is up in the air, keep the last ones.
+let shadowsFresh = 0;
+function tableMoving() {
+  if (state.mode === 'intro' || state.mode === 'clearing' || fading.length) return true;
+  const P = round.paper;
+  if (P && P.released && P.t < 1.6) return true;
+  return bodies().some((b) => !Phys.Physics.resting(b.rec, 0.002, 0.02));
+}
 function render() {
-  contact.update(scene);
+  const moving = !physics || tableMoving();
+  if (moving) shadowsFresh = 0;
+  if (shadowsFresh < 3) {
+    contact.update(scene);
+    renderer.shadowMap.needsUpdate = true;
+    shadowsFresh++;
+  }
   renderer.render(scene, camera);
 }
 
@@ -738,6 +760,13 @@ $('btnSound').addEventListener('click', () => {
     // settle the first cookie before anyone sees it
     for (let i = 0; i < 240; i++) advance(1 / 60);
     renderer.compile(scene, camera);
+    {
+      // compile the fade materials now rather than at the first "another cookie"
+      const probe = new THREE.Mesh(new THREE.BoxGeometry(0.001, 0.001, 0.001), crustFade);
+      const probe2 = new THREE.Mesh(probe.geometry, crumbFade);
+      probe.position.y = probe2.position.y = -1;
+      scene.add(probe, probe2); renderer.compile(scene, camera); scene.remove(probe, probe2);
+    }
     render();
     $('loading').classList.add('hidden');
     $('brand').classList.remove('hidden');
@@ -778,4 +807,5 @@ window.__fc = {
   get scene() { return scene; },
   get camera() { return camera; },
   get renderer() { return renderer; },
+  get audio() { return audio; },
 };
