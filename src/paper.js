@@ -37,21 +37,18 @@ function paperBase(ctx, rng) {
   ctx.strokeRect(0, 0, PX, PY);
 }
 
-/** soft rectangular shadow for the floating slip */
+/** soft rectangular shadow for the floating slip (canvas shadowBlur works everywhere,
+ *  unlike ctx.filter, which Safari ignores): draw the box off-canvas, keep only its shadow */
 export function slipShadowTexture() {
   const c = document.createElement('canvas');
   c.width = 256; c.height = 96;
   const g = c.getContext('2d');
-  g.filter = 'blur(10px)';
+  g.shadowColor = '#000';
+  g.shadowBlur = 14;
+  g.shadowOffsetX = 1000;
   g.fillStyle = '#000';
-  g.fillRect(28, 26, 200, 44);
-  if (g.filter !== 'blur(10px)') {
-    // no canvas filters (older Safari): fake the blur with stacked translucent rects
-    g.clearRect(0, 0, 256, 96);
-    for (let i = 0; i < 14; i++) { g.globalAlpha = 0.09; g.fillRect(14 + i * 1.5, 12 + i * 1.5, 228 - i * 3, 72 - i * 3); }
-  }
-  const t = new THREE.CanvasTexture(c);
-  return t;
+  g.fillRect(30 - 1000, 26, 196, 44);
+  return new THREE.CanvasTexture(c);
 }
 
 function wrap(ctx, text, maxW) {
@@ -82,7 +79,8 @@ function inked(ctx, draw) {
   // printed ink: a hair of spread, not quite solid
   ctx.save();
   ctx.fillStyle = INK;
-  ctx.filter = 'blur(0.7px)';
+  ctx.shadowColor = 'rgba(39,71,155,0.55)';
+  ctx.shadowBlur = 1.5;
   ctx.globalAlpha = 0.93;
   draw();
   ctx.restore();
@@ -175,10 +173,10 @@ export function slipTextures(f, rng, renderer) {
     tc.fillStyle = PAPER; tc.fillRect(0, 0, PX, PY);
     tc.fillStyle = '#ffffff'; tc.fillRect(0, 0, PX, PY);
     dst.save();
-    dst.globalAlpha = 0.14;
+    dst.globalAlpha = 0.03;
     dst.globalCompositeOperation = 'multiply';
-    dst.filter = 'blur(2.5px)';
-    dst.drawImage(t, 0, 0);
+    // a little diffusion through the sheet: several offset copies
+    for (const [ox, oy] of [[0, 0], [2, 1], [-2, -1], [1, -2], [-1, 2]]) dst.drawImage(t, ox, oy);
     dst.restore();
   };
   const f2 = canvas(); f2.getContext('2d').drawImage(front, 0, 0);

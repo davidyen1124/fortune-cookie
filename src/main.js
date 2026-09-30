@@ -234,7 +234,7 @@ function framing() {
   const vf = THREE.MathUtils.degToRad(camera.fov);
   const hf = 2 * Math.atan(Math.tan(vf / 2) * a);
   const spread = cam.spread;
-  const fw = a < 1 ? 0.72 : 0.5, fh = a < 1 ? 0.3 : 0.56;
+  const fw = a < 1 ? 0.8 : 0.5, fh = a < 1 ? 0.3 : 0.56;
   const dw = spread / fw / (2 * Math.tan(hf / 2));
   const dh = (spread * 0.75) / fh / (2 * Math.tan(vf / 2));
   return Math.max(dw, dh);
@@ -585,7 +585,7 @@ function advance(dt) {
     const k = Math.min(1, dt * 2.5);
     cam.target.x += (c.x - cam.target.x) * k;
     cam.target.z += (c.z - cam.target.z) * k;
-    cam.spread += (Math.max(0.11, hi - lo + 0.075) - cam.spread) * k;
+    cam.spread += (Math.max(0.1, hi - lo + 0.062) - cam.spread) * k;
   } else if (state.mode === 'idle' || state.mode === 'intro') {
     cam.spread += (0.068 - cam.spread) * Math.min(1, dt * 2);
   }
