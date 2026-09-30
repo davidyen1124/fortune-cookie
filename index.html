@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#f2efea" />
+    <title>Fortune Cookie</title>
+    <meta name="description" content="Crack open a photo-real fortune cookie. Real physics, a crumpled paper slip, and a new fortune every time." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fortune Cookie" />
+    <meta property="og:description" content="Crack open a photo-real fortune cookie. Real physics, a crumpled paper slip, and a new fortune every time." />
+    <meta property="og:image" content="/social-preview.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="stage" aria-label="A fortune cookie on a white table. Tap it to crack it open."></canvas>
+
+    <div id="loading" class="screen">
+      <div class="loading-inner">
+        <div class="bar"><i id="bar"></i></div>
+        <p id="loadNote">Baking…</p>
+      </div>
+    </div>
+
+    <header id="brand" class="hidden"><span>Fortune</span> <span>Cookie</span></header>
+
+    <div id="swatches" class="hidden" role="group" aria-label="Backdrop colour">
+      <button type="button" data-bg="paper" aria-label="White backdrop" style="--c:#f2efea"></button>
+      <button type="button" data-bg="red" aria-label="Red backdrop" style="--c:#8c1f1c"></button>
+      <button type="button" data-bg="jade" aria-label="Jade backdrop" style="--c:#2f5147"></button>
+      <button type="button" data-bg="ink" aria-label="Black backdrop" style="--c:#1c1a19"></button>
+    </div>
+
+    <button id="btnSound" class="icon hidden" type="button" aria-label="Sound on" aria-pressed="true" title="Sound">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path id="icoSound" d="M4 9v6h4l5 4V5L8 9H4zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
+    </button>
+
+    <p id="hint" class="hidden" aria-hidden="true">Tap the cookie to crack it</p>
+
+    <div id="actions" class="hidden">
+      <button id="btnFlip" type="button">Turn over</button>
+      <button id="btnAgain" type="button" class="primary">Another cookie</button>
+    </div>
+
+    <p id="fortuneText" class="sr-only" aria-live="polite"></p>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
