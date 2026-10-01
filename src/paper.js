@@ -248,30 +248,31 @@ export function slipGeometry() {
 }
 
 /**
- * The slip as it lies folded in the crease: centred on M, running along the crease and
- * reaching into the pocket, halfway between the two layers of batter.
- * crease: { u, s, pocket[u][s] } from cookie.json (cookie frame). Returns positions in
- * the cookie frame.
+ * The slip as it lies tucked in the cookie: in the pocket between the two layers, running
+ * from beside the fold out through the pocket mouth, so one end sticks out of the side.
+ * crease: { u, s, pocket[u][s] } from cookie.json: the surface halfway between the layers
+ * at fold coordinate u and distance s from the fold (cookie frame).
+ * opt: side (+1 right arm, -1 left), angle to the fold, offset from it, start along the slip,
+ * xflip / yflip (which way round the slip lies). Returns positions in the cookie frame.
  */
-export function inCrease(crease, flat, peek = 0) {
+export function inPocket(crease, flat, { side = 1, angle = 0.44, offset = 0.010, start = -0.008, xflip = false, yflip = false } = {}) {
   const { u, s, pocket } = crease;
-  const { W } = SLIP;
+  const { L } = SLIP;
   const out = new Float32Array(flat.length);
   const nu = u.length, ns = s.length;
   const find = (arr, n, x) => {
     let i = 0;
     while (i < n - 2 && arr[i + 1] < x) i++;
-    // linear extrapolation past the ends (the slip may poke out of the slit)
-    return [i, (x - arr[i]) / (arr[i + 1] - arr[i])];
+    return [i, (x - arr[i]) / (arr[i + 1] - arr[i])]; // extrapolates past the ends
   };
+  const ca = Math.cos(angle), sa = Math.sin(angle);
   for (let v = 0; v < flat.length; v += 3) {
-    // along the slip -> along the crease (mirrored so the print reads from the slit);
-    // across the slip -> from the fold into the pocket
-    const x = -flat[v];
-    // near the top of the slit, where the lips gape, the slip edge shows through the gap
-    const y = 0.0006 + (flat[v + 1] + W / 2) * 0.96 - peek * Math.exp(-((x / 0.009) ** 2));
-    const [i, a] = find(u, nu, x);
-    const [j, b] = find(s, ns, y);
+    const x = (xflip ? -flat[v] : flat[v]) + L / 2 + start;
+    const y = (yflip ? -flat[v + 1] : flat[v + 1]) + offset;
+    const pu = side * (x * ca - y * sa);
+    const ps = Math.max(0.0009, x * sa + y * ca);
+    const [i, a] = find(u, nu, pu);
+    const [j, b] = find(s, ns, ps);
     for (let k = 0; k < 3; k++) {
       const p00 = pocket[i][j][k], p10 = pocket[i + 1][j][k], p01 = pocket[i][j + 1][k], p11 = pocket[i + 1][j + 1][k];
       out[v + k] = (p00 * (1 - a) + p10 * a) * (1 - b) + (p01 * (1 - a) + p11 * a) * b;

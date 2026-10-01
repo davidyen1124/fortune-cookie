@@ -9,32 +9,31 @@
 
 ## What it does
 
-1. A fresh cookie drops onto a seamless studio table and settles on its own.
-2. Tap it. It cracks across the ridge, the way a real one snaps. The two halves fly apart, bounce and rock to a stop, and crumbs spill from the break.
-3. The slip slides out of one half, uncreases, and floats up to you. It's a 57 × 16 mm slip in Wonton-Food blue, with lucky numbers on the front and a Learn Chinese lesson on the back. Tap the slip, or press **Turn over**, to read the back.
-4. **Another cookie** clears the table and drops a new cookie. Fortunes don't repeat until you've read the last 60.
-
-The dots in the top corner change the backdrop: white paper, lucky red, jade or ink.
+1. A fortune cookie sits on a seamless white studio table, with the end of its slip poking out of one side.
+2. Tap it. It snaps across the notch, the way a real one does: the two arms hinge apart, slide a few centimetres and rock to rest, and crumbs spill from the break.
+3. The slip is drawn out of the half it was tucked into, straightens, and comes up to you while the table behind goes softly out of focus. It's a 57 × 16 mm slip in Wonton-Food blue, with lucky numbers on the front and a Learn Chinese lesson on the back. Tap the slip, or press **Turn over**, to read the back.
+4. **Another cookie** clears the table and sets down a new one. Fortunes don't repeat until you've read the last 60.
 
 ## How it's made
 
-- **The cookie is modelled the way it's folded.** A flat disc of batter, 81 mm across, is folded over the slip. Then the middle of the fold is pressed over a cup rim, so both halves of the crease meet and form the slit. Geometrically the half-disc rolls into a cone (the same way a semicircle of paper makes a party hat), with a rounded ridge where it lay on the rim. [`blender/cookie_geom.py`](blender/cookie_geom.py) builds it that way:
-  - two layers joined at the crease, with a pocket between them
-  - thinner, browner edges
-  - lopsided lobes and a wobbly rim
+- **The cookie is modelled the way it's folded.** A flat disc of batter, 80 mm across, is folded in half over the slip into a half-moon pocket. Then the middle of the straight fold is pushed in over a cup rim: the fold becomes the V-shaped notch, the half-moon becomes a horseshoe, and the two layers puff apart, the top doming up and the bottom down. [`blender/cookie_geom.py`](blender/cookie_geom.py) builds exactly that:
+  - a fold line bent into a V with a rounded apex; each arm is a fat pocket that flattens to a pointed tip
+  - the rim runs round the outside at its true length, the top rim resting just above the bottom one, with a thin seam that opens into the pocket mouth at the back
+  - thinner, browner edges, lopsided arms and a wobbly rim
   - every vertex keeps its position on the original flat disc as its UV, so one texture atlas fits the whole cookie *and* every broken piece
-- **Blender** ([`blender/build_cookie.py`](blender/build_cookie.py)) triangulates the disc and splits it along jagged break lines into five fracture variants. It solidifies the shell, bakes ambient occlusion in Cycles, and exports:
+  - checked against reference photos from above, in three-quarter view and from the back
+- **Blender** ([`blender/build_cookie.py`](blender/build_cookie.py)) triangulates the disc and splits it along chipped break lines into five fracture variants (the crack runs from the apex of the notch to the back rim, across both layers). It solidifies the shell, bakes ambient occlusion in Cycles, and exports:
   - the meshes (glTF, meshopt-compressed)
-  - convex-hull colliders and the real mass and inertia of each piece: the cookie weighs 8 g
-  - the crease and pocket, where the slip is tucked
+  - convex-hull colliders and the mass and inertia of each piece: the cookie weighs 8 g
+  - the pocket between the layers, where the slip is tucked
   - [`blender/build_studio.py`](blender/build_studio.py) renders the studio (a white sweep, softboxes) into the HDR light probe the page is lit with, plus a Cycles reference render used to calibrate the real-time look.
 - **Textures:** the crust, the inside of the pocket, the broken edge and the paper fibre are macro scans made with the Codex CLI `imagegen` skill (`art/imagegen/`). They're made tileable and composited into the atlas with the browning a tray-baked disc gets toward its rim. The favicon and social card were made with `imagegen` too, from the Cycles render.
-- **Physics:** [Rapier](https://rapier.rs) at 240 Hz. The halves and 12–18 crumbs are real rigid bodies with baked-batter friction and bounce, plus a little air drag, since an 8 g shell is mostly air. The snap is an impulse that hinges the halves open about the ridge. After that it's all simulation.
-- **The slip isn't simulated.** It's animated on purpose. It keeps the creases it got in the cookie (faceted folds, a few crinkles, a curl) and is printed like the real thing:
+- **Physics:** [Rapier](https://rapier.rs) at 240 Hz. The halves and the crumbs are real rigid bodies with baked-batter friction and bounce, plus a little air drag, since an 8 g shell is mostly air. The snap is an impulse that levers the two arms apart about the back of the cookie. After that it's all simulation.
+- **The slip isn't simulated.** It's animated on purpose: it rides in its half for a beat, slides out of the pocket the way it was pointing, and comes up to the reader. It keeps the creases it got in the cookie (faceted folds, a few crinkles, a curl) and is printed like the real thing:
   - condensed bold sans in blue, a register tab, and "Lucky Numbers" with six numbers from 1 to 56 in draw order
   - on the back, a Learn Chinese word in simplified characters with tone-marked pinyin
   - each side faintly shows through the other
-- **Fortunes:** 246 of them in [`src/fortunes.js`](src/fortunes.js), written in the house style after reading a few hundred real slips. The 138 Learn Chinese entries were checked against CC-CEDICT. See `references/` notes for sources (not shipped).
+- **Fortunes:** 246 of them in [`src/fortunes.js`](src/fortunes.js), written in the house style after reading a few hundred real slips. The 138 Learn Chinese entries were checked against CC-CEDICT.
 - **Sound:** no audio files. The crack is a sharp broadband snap followed by a scatter of micro-fractures. Each landing makes a hollow tap, and each crumb a tiny tick, all driven by the physics contact impulses. The slip rustles when it comes out.
 
 ## Run it

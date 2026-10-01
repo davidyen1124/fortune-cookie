@@ -147,7 +147,7 @@ def build_solid(ck, outline, is_break, interior, name, collection=None):
     Pu = (ck.mid(ub + h, vb) - ck.mid(ub - h, vb)) / (2 * h)
     Pv = (ck.mid(ub, vb + h) - ck.mid(ub, vb - h)) / (2 * h)
     O3 = Pu * out2[:, :1] + Pv * out2[:, 1:]
-    O3 /= np.linalg.norm(O3, axis=1, keepdims=True)
+    O3 /= np.linalg.norm(O3, axis=1, keepdims=True) + 1e-9
 
     verts, uvs, faces, fuv, fmat, sharp_faces = [], [], [], [], [], []
     verts.extend(A.tolist())
@@ -251,9 +251,11 @@ def fracture_line(ck, rng, offset=0.0, tilt=0.0, rough=0.0012, wander=0.003):
     u = offset + tilt * vs
     for k in range(1, 5):
         u += rng.normal() * wander / k * np.sin(k * np.pi * (vs / R + 1) / 2 + rng.uniform(0, 6.28))
-    zig = np.cumsum(rng.normal(size=len(vs))) * rough * 0.18
+    zig = np.cumsum(rng.normal(size=len(vs))) * rough * 0.14
     zig -= np.linspace(zig[0], zig[-1], len(vs))
-    u += zig + rng.normal(size=len(vs)) * rough * 0.25
+    # a brittle wafer breaks in short straight runs with small steps, not a sawtooth
+    chip = np.repeat(rng.normal(size=len(vs) // 7 + 1), 7)[:len(vs)] * rough * 0.2
+    u += zig + chip
     pts = np.stack([u, vs], 1)
     # clip to the disc (keep the part inside, extend ends exactly to the rim later)
     r = np.hypot(pts[:, 0], pts[:, 1])

@@ -1,50 +1,49 @@
 """Parametric fortune cookie, built the way a real one is folded.
 
-A flat disc of batter (radius R) is folded in half over the fortune slip, then the
-middle of the fold is pressed over a cup rim so the two halves of the fold (crease)
-come together side by side. The crease ends up as the vertical slit at the front,
-the line from the crease's middle to the rim (M -> T) becomes the rounded ridge on
-top, and each quarter of the disc puffs out into a lobe with a pocket inside.
+A flat disc of batter (radius R) is folded in half over the fortune slip into a
+half-moon pocket. Then the middle of the straight folded edge is pushed in over a cup
+rim while the two corners are pulled round: the fold becomes a V-shaped notch, the
+half-moon becomes a horseshoe, and the two layers puff apart, the top one doming up
+and the bottom one down. Each arm of the horseshoe is a fat pocket that tapers to a
+flat pointed tip; the fold runs along the inside of the notch and the open rim runs
+round the outside, gaping a little at the back.
 
 Disc coordinates (u, v), metres, u^2 + v^2 <= R^2:
-  v = 0  the crease (fold line, where the slip lies)
-  v > 0  outer layer (the smooth outside shell)
-  v < 0  inner layer (lines the pocket, faces the cavity between the lobes)
-  u < 0  left lobe, u > 0 right lobe, u = 0 the ridge
+  v = 0   the fold (where the slip lies); u runs along it, u < 0 left arm, u > 0 right
+  v > 0   top layer, |v| = distance from the fold along the batter
+  v < 0   bottom layer
 
-World frame (Blender, z up): x right, -y toward the viewer (front / slit), z up.
-Side A of the disc (the +normal side, baked against the tray) ends up outside.
+World frame (Blender, z up): x right, +y toward the back rim, the tips point to -y
+(toward the viewer); the fold line lies in the plane z = 0.
+Side A of the disc (+normal of the parametrisation) is the outside of both shells.
 """
 import math
 import numpy as np
 
 P = dict(
-    R=0.0405,          # disc radius (8.1 cm disc)
-    T=0.00125,         # shell thickness in the middle
+    R=0.040,           # disc radius (80 mm disc)
+    T=0.0013,          # shell thickness in the middle
     T_rim=0.0008,      # shell thickness at the rim (batter spreads thinner, bakes crisper)
-    rf=0.00078,        # crease fold radius of the mid-surface (layers just touch)
-    # outer loop: the directions (seen from M) the outer half-disc sweeps through,
-    # polar in angle around the cone axis, phi = 0 toward the slit. rho(phi) in radians,
-    # scaled so the loop has spherical length pi (a half disc rolls into it without stretching)
-    a1=0.0,            # > 0: slit side fuller than the ridge side
-    a2=-0.26,          # < 0: wider across (the two lobes) than front-to-back
-    a3=-0.03,          # heart-ish: sharpens the ridge
-    notch=0.30, notch_w=0.30,  # the lobes bulge forward past the slit (heart notch at phi = 0)
-    tilt=math.radians(8),   # cone axis tilted back (slit side up)
-    # apex: the fold at M is bent over a cup rim, so the tip is a rounded dome
-    psi_top=1.35, s_round=0.012,
-    bulge=0.06,        # lobes bow outward along their generators (radians at mid-length)
-    drop=0.25, drop_p=1.6,           # generators curve down toward the rim: a puffy dome, not a skirt
-    ridge_len=0.018, ridge_q=2.0,   # the apex is a short rounded ridge (the part that lay on the cup rim)
-    flare=0.0,         # rim flares out a little (radians at the rim)
-    # pocket between the layers: the inner loop sits inside the outer one
-    delta1=0.22, delta_p=1.1,    # angular gap at the ridge / how fast it opens from the lips
-    lip=0.0,                      # extra spacing of the slit lips
-    lip_open=0.0016, lip_r0=0.008,   # the slit gapes a little below the top
+    rf=0.0009,         # fold radius of the mid-surface (the layers touch just behind the fold)
+    # the fold line in plan: a V with a rounded apex (the notch)
+    beta=math.radians(48),    # apex angle of the V
+    r_apex=0.004,            # radius of the rounded apex
+    fold_len=0.72,            # the pinched fold is a little shorter than the flat one
+    arm_bow=math.radians(13), # the arms curl in toward each other: a horseshoe, not a straight V
+    droop=0.0035,             # the tips sit a little lower than the apex
+    # cross-section of each shell: a short neck where the layers stay together, then a dome
+    neck=0.0034,
+    psi0=math.radians(100),    # how steeply the top shell climbs out of the notch
+    turn=math.radians(216),   # how far it turns on its way over the dome and down to the rim
+    psi0_b=math.radians(96),  # bottom shell: a little flatter, so its rim sticks out past the top one
+    turn_b=math.radians(213),
+    taper_p=2.4, taper_e=0.7, # the shells flatten toward the tips, where the layers are pressed together
+    gape=0.0013, gape_tip=0.0002,  # pocket mouth: gap between the rims at the back / near the tips
     # irregularity
-    asym=0.05,           # left/right lobe difference
-    wobble=0.00035,      # low-frequency dents (m)
-    rim_noise=0.018,     # relative rim radius noise
+    asym=0.07,           # the two arms are never the same size
+    skew=0.06,           # nor is the notch square to the back
+    wobble=0.0003,       # low-frequency dents (m)
+    rim_noise=0.016,     # relative rim radius noise
     seed=3,
 )
 
@@ -68,9 +67,11 @@ class Cookie:
         self.rim_h = [(k, rng.normal() * p["rim_noise"] / k ** 0.9, rng.uniform(0, 2 * np.pi)) for k in range(2, 26)]
         # surface wobble: sum of random plane waves in disc coords
         self.waves = [(rng.normal(size=2) * rng.uniform(40, 160), rng.uniform(0, 2 * np.pi), rng.normal() * p["wobble"]) for _ in range(14)]
-        self.xl = p["rf"] + p["T"] / 2 + p["lip"]       # half spacing of the two lip folds
         self.vf = math.pi * p["rf"] / 2                  # disc distance used by each half of the fold arc
-        self._build_loop()
+        self.Rg = p["R"]
+        self._build_fold()
+        self._build_mouth()
+        self._build_ribs()
 
     # ------------------------------------------------------------------ outline
     def rim_radius(self, theta):
@@ -84,145 +85,173 @@ class Cookie:
         th = np.arctan2(v, u)
         return np.hypot(u, v) <= self.rim_radius(th) - margin
 
-    # ------------------------------------------------------------------ cone loop
-    def _rho_shape(self, phi):
+    # ------------------------------------------------------------------ fold line
+    def _build_fold(self):
+        """the fold as a plan curve: straight-ish arms, rounded apex; tabulated against u"""
         p = self.p
-        side = np.tanh(np.sin(phi) * 3)  # +1 right lobe, -1 left lobe
-        w = np.angle(np.exp(1j * phi))  # -pi..pi
-        notch = 1 - p["notch"] * np.exp(-(w / p["notch_w"]) ** 2)
-        return (1 + p["a1"] * np.cos(phi) + p["a2"] * np.cos(2 * phi) + p["a3"] * np.cos(3 * phi)) * notch * (1 + p["asym"] * side * np.sin(phi) ** 2)
+        R, k = p["R"], p["fold_len"]
+        n = 4001
+        u = np.linspace(-1.25 * R, 1.25 * R, n)
+        sig = k * u                                   # arc length along the pinched fold
+        half = math.pi / 2 - p["beta"] / 2            # heading of the left arm (from +x)
+        sa = p["r_apex"] * half                       # half the apex arc
+        L = k * R
+        # heading: left arm -> round the apex -> right arm, plus the inward curl of each arm
+        t = np.clip(sig / sa, -1, 1)
+        h = -half * (1.5 * t - 0.5 * t ** 3)          # smooth turn through the apex
+        arm = np.clip((np.abs(sig) - sa) / (L - sa), 0, 1.3)
+        h = h - np.sign(sig) * p["arm_bow"] * arm ** 1.5 + p["skew"] * (1 - arm.clip(0, 1)) * 0.0
+        d = np.stack([np.cos(h), np.sin(h)], 1)
+        ds = sig[1] - sig[0]
+        pos = np.zeros((n, 2))
+        pos[1:] = np.cumsum((d[1:] + d[:-1]) / 2 * ds, 0)
+        pos -= pos[n // 2]
+        # a small skew of the whole notch
+        c, s = math.cos(p["skew"]), math.sin(p["skew"])
+        rot = np.array([[c, -s], [s, c]])
+        self.fu = u
+        self.fpos = pos @ rot.T
+        self.fh = h + p["skew"]
+        self.fz = -p["droop"] * np.clip(np.abs(u) / R, 0, 1.25) ** 2
 
-    def _dir(self, psi, phi):
-        """unit direction at angle psi from the axis, azimuth phi (0 = toward the slit)"""
-        c, e1, e2 = self.axis
-        sp = np.sin(psi)[..., None]
-        return np.cos(psi)[..., None] * c + sp * (np.sin(phi)[..., None] * e1 + np.cos(phi)[..., None] * e2)
+    def fold(self, u):
+        """fold point, outward (toward the rim) horizontal normal, for disc coordinate u"""
+        x = np.interp(u, self.fu, self.fpos[:, 0])
+        y = np.interp(u, self.fu, self.fpos[:, 1])
+        z = np.interp(u, self.fu, self.fz)
+        h = np.interp(u, self.fu, self.fh)
+        pos = np.stack([x, y, z], -1)
+        nrm = np.stack([-np.sin(h), np.cos(h), np.zeros_like(h)], -1)  # left of travel = away from the notch
+        return pos, nrm
 
-    def _build_loop(self):
+    # ------------------------------------------------------------------ shells
+    def profile(self, u, s, bottom):
+        """(outward, up) offset from the fold of the layer point at distance s from the fold"""
         p = self.p
-        t = p["tilt"]
-        # axis: down, tilted back (away from the viewer, +y) by `tilt`; e2 points toward the slit
-        c = np.array([0.0, math.sin(t), -math.cos(t)])
-        e1 = np.array([1.0, 0.0, 0.0])
-        e2 = np.cross(c, e1)  # (0, -cos t, -sin t) -> front
-        if e2[1] > 0:
-            e2 = -e2
-        self.axis = (c, e1, e2)
-        phi = np.linspace(0, 2 * np.pi, 2049)
-        shape = self._rho_shape(phi)
+        R = self.Rg
+        q = np.clip(np.abs(u) / R, 0, 1)
+        W = np.sqrt(np.maximum(R * R - u * u, 1e-10))
+        flat = (1 - q ** p["taper_p"]) ** p["taper_e"]          # 1 in the middle, 0 at the tips
+        size = 1 + p["asym"] * np.tanh(u / 0.008)                # right arm a little fuller
+        # climb and turn shrink together, so the rim always comes back down to meet the other layer
+        psi0 = (p["psi0_b"] if bottom else p["psi0"]) * flat
+        turn = (p["turn_b"] if bottom else p["turn"]) * flat * size
+        sn = np.minimum(p["neck"], 0.3 * W)
+        n = 40
+        ss = np.linspace(0, 1, n)[None, :] * s[..., None]
+        a = ss / np.maximum(sn[..., None], 1e-6)
+        rise = psi0[..., None] * np.where(a < 1, a * a * (3 - 2 * a), 1.0)
+        dome = np.clip((ss - sn[..., None]) / np.maximum(W[..., None] - sn[..., None], 1e-6), 0, 1.15)
+        psi = rise - turn[..., None] * dome
+        ds = s / (n - 1)
+        c, sn_ = np.cos(psi), np.sin(psi)
+        out = (np.sum(c, -1) - 0.5 * (c[..., 0] + c[..., -1])) * ds
+        up = (np.sum(sn_, -1) - 0.5 * (sn_[..., 0] + sn_[..., -1])) * ds
+        return out, (-up if bottom else up)
 
-        def length(k):
-            d = self._dir(k * shape, phi)
-            return np.sum(np.linalg.norm(np.diff(d, axis=0), axis=1))
-        lo, hi = 0.05, 1.4
-        for _ in range(60):
-            m = 0.5 * (lo + hi)
-            if length(m) < math.pi:
-                lo = m
+    def _build_mouth(self):
+        """How far the top shell's rim must come down to rest just above the bottom shell's
+        rim (the two rims run together round the outside, parted by a thin seam that widens
+        to the pocket mouth at the back). Tabulated against u; applied in base()."""
+        p = self.p
+        R = self.Rg
+        us = np.linspace(-R * 0.999, R * 0.999, 241)
+        ns = 96
+        W = np.sqrt(R * R - us * us)
+        S = W[:, None] * np.linspace(0, 1, ns)[None, :]
+        U = np.repeat(us[:, None], ns, 1)
+        ot, zt = self.profile(U, S, False)
+        ob, zb = self.profile(U, S, True)
+        dz = np.zeros(len(us))
+        for i in range(len(us)):
+            # bottom shell height under the top rim: outer branch of the bottom profile
+            k = int(np.argmax(ob[i]))
+            lo = int(ns * 0.35)
+            if k <= lo + 1:
+                zb_at = zb[i, -1]
             else:
-                hi = m
-        self.k = 0.5 * (lo + hi)
-        d = self._dir(self.k * shape, phi)
-        seg = np.linalg.norm(np.diff(d, axis=0), axis=1)
-        s = np.concatenate([[0], np.cumsum(seg)])
-        self.loop_phi = phi
-        self.loop_alpha = s / s[-1] * math.pi  # isometric: alpha (disc angle) along the loop
+                zb_at = np.interp(min(ot[i, -1], ob[i, k]), ob[i, lo:k + 1], zb[i, lo:k + 1])
+            q = abs(us[i]) / R
+            gap = p["gape_tip"] + (p["gape"] - p["gape_tip"]) * (1 - q * q) ** 1.5
+            want = zb_at - 2 * p["rf"] + p["T_rim"] + gap
+            dz[i] = want - zt[i, -1]
+        self.mouth_u, self.mouth_dz = us, dz
 
-    def loop_at(self, alpha):
-        """(psi, phi) of the outer loop at disc angle alpha in [0, pi]"""
-        phi = np.interp(alpha, self.loop_alpha, self.loop_phi)
-        return self.k * self._rho_shape(phi), phi
+    def shell(self, ut, st, bottom):
+        """point of a shell on the cross-section at fold coordinate ut, st along it from the fold"""
+        f, n = self.fold(ut)
+        out, up = self.profile(ut, st, bottom)
+        if not bottom:
+            R = self.Rg
+            W = np.sqrt(np.maximum(R * R - ut * ut, 1e-10))
+            up = up + np.interp(ut, self.mouth_u, self.mouth_dz) * np.clip(st / W, 0, 1.15) ** 2.5
+        return f + out[..., None] * n + up[..., None] * np.array([0.0, 0.0, 1.0])
 
-    def _delta(self, alpha):
-        """angular gap between the layers, 0 at the lips, largest at the ridge (alpha in [0, pi])"""
-        p = self.p
-        q = np.sin(np.clip(alpha, 0, np.pi))
-        return p["delta1"] * q ** p["delta_p"]
+    def _build_ribs(self):
+        """Where each bit of batter ends up. The pinch shortens the fold, but the rim keeps its
+        length: it is laid round the outside of the horseshoe at its true spacing. So a line
+        drawn straight out from the fold on the flat disc leans, in the cookie, toward the
+        spot on the outline that is the right distance along the rim. h(u) is that spot,
+        as the fold coordinate of the cross-section it lies on."""
+        R = self.Rg
+        ut = np.linspace(-R, R, 801)
+        rim = self.shell(ut, np.sqrt(np.maximum(R * R - ut * ut, 0)), False)
+        S = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(rim, axis=0), axis=1))])
+        S /= S[-1]
+        u = np.linspace(-R, R, 801)
+        frac = 1 - np.arccos(np.clip(u / R, -1, 1)) / np.pi      # how far round the flat rim
+        self.rib_u = u
+        self.rib_h = np.interp(frac, S, ut)
 
-    # ------------------------------------------------------------------ layers
-    def layer(self, r, alpha, inner):
-        """Point on the outer (inner=False) or inner layer, before the lip/fold offsets.
-        r: distance from M along the disc; alpha in [0, pi] measured from the B lip."""
-        p = self.p
-        psi0, phi = self.loop_at(alpha)
-        if inner:
-            psi0 = psi0 * (1 - self._delta(alpha)) - 0.0 * alpha
-        lobe = np.sin(phi) ** 2
-        n = 28
-        ss = np.linspace(0, 1, n)[None, :] * r[..., None]
-        R = p["R"]
-        e = np.exp(-ss / p["s_round"])
-        body = psi0[..., None] - p["drop"] * (psi0[..., None] / self.k) * np.clip(ss / R, 0, 1.2) ** p["drop_p"]
-        psi = (p["psi_top"] * e + body * (1 - e)
-               + p["bulge"] * lobe[..., None] * np.sin(np.pi * np.clip(ss / R, 0, 1))
-               + p["flare"] * smoothstep(0.7 * R, 1.05 * R, ss))
-        d = self._dir(psi, np.broadcast_to(phi[..., None], psi.shape))
-        ds = (r / (n - 1))[..., None]
-        pos = (np.sum(d, -2) - 0.5 * (d[..., 0, :] + d[..., -1, :])) * ds
-        # generators start along the ridge instead of all from one point
-        back = self._dir(np.array(p["psi_top"]), np.array(np.pi))
-        w = np.sin(np.clip(alpha, 0, np.pi)) ** p["ridge_q"]
-        pos = pos + (p["ridge_len"] * w)[..., None] * back
-        return pos
+    def base(self, u, b, bottom):
+        """layer point for disc coords (u, b >= 0 from the fold), before the fold offset"""
+        R = self.Rg
+        # measure against the real, wavy rim: every rim point lies at the end of its cross-section
+        # (so the two rims always come together), and the waviness goes into its length
+        rho = self.rim_radius(np.arctan2(-b if bottom else b, u)) / R
+        un, bn = u / rho, b / rho
+        W = np.sqrt(np.maximum(R * R - un * un, 1e-8))
+        f = np.clip(bn / W, 0, 1.0)
+        lean = f ** 1.6
+        ut = un + (np.interp(un, self.rib_u, self.rib_h) - un) * lean
+        Wt = np.sqrt(np.maximum(R * R - ut * ut, 1e-8))
+        return self.shell(ut, f * Wt * (1 + (rho - 1) * f * f), bottom)
 
-    def base(self, u, b, inner):
-        """layer point for disc coords (u, b>=0) with the lips pulled apart"""
-        r = np.hypot(u, b)
-        alpha = np.arctan2(b, u)  # 0 at the B lip (u > 0), pi at the A lip
-        pos = self.layer(r, alpha, inner)
-        c, e1, e2 = self.axis
-        p = self.p
-        x = r / p["lip_r0"]
-        opening = self.xl + p["lip_open"] * x * np.exp(1 - x)
-        pos = pos + (opening * np.cos(alpha) ** 3)[..., None] * e1
-        return pos
-
-    def base_normal(self, u, b, inner, h=2e-5):
-        pu = self.base(u + h, b, inner) - self.base(u - h, b, inner)
-        pb = self.base(u, b + h, inner) - self.base(u, np.maximum(b - h, 0), inner)
+    def base_normal(self, u, b, bottom, h=2e-5):
+        """normal of the layer pointing away from the pocket (up for the top, down for the bottom)"""
+        pu = self.base(u + h, b, bottom) - self.base(u - h, b, bottom)
+        pb = self.base(u, b + h, bottom) - self.base(u, np.maximum(b - h, 0), bottom)
         n = _unit(np.cross(pu, pb))
-        return n
+        return -n if bottom else n
 
     def mid(self, u, v, noise=True):
         """Mid-surface point for disc coords (u, v) (arrays)."""
         u = np.asarray(u, float); v = np.asarray(v, float)
         rf, vf = self.p["rf"], self.vf
         b = np.maximum(np.abs(v) - vf, 0)
-        inner = v < 0
+        bottom = v < 0
         out = np.zeros(u.shape + (3,))
+        up = np.array([0.0, 0.0, 1.0])
         for flag in (False, True):
-            m = inner == flag
+            m = bottom == flag
             if not np.any(m):
                 continue
-            um, bm = u[m], b[m]
-            Pm = self.base(um, bm, flag)
-            nrm = self.base_normal(um, np.maximum(bm, 1e-4), flag)
-            out[m] = Pm + (-rf if flag else rf) * nrm
+            out[m] = self.base(u[m], b[m], flag) + (-rf if flag else rf) * up
         fold = np.abs(v) < vf
         if np.any(fold):
+            # half circle joining the two layers round the fold, bulging into the notch
             uf = u[fold]
-            L = self.base(uf, np.zeros_like(uf), False)
-            n0 = self.lip_normal(uf)
-            tb = self.base(uf, np.full_like(uf, 1e-4), False) - L
-            tb = _unit(tb - np.sum(tb * n0, -1, keepdims=True) * n0)
+            f, n = self.fold(uf)
             th = v[fold] / rf  # -pi/2 .. pi/2
-            out[fold] = L + rf * (np.sin(th)[..., None] * n0 - np.cos(th)[..., None] * tb)
+            out[fold] = f + rf * (np.sin(th)[..., None] * up - np.cos(th)[..., None] * n)
         if noise:
             w = np.zeros(u.shape)
             for k, ph, amp in self.waves:
-                w += amp * np.sin(k[0] * u + k[1] * np.abs(v) + ph)  # same dents on both layers
-            taper = smoothstep(0.0, 0.006, np.abs(v)) * smoothstep(0.004, 0.012, np.hypot(u, v))
-            # outward (away from the cone axis) for both layers, so the layers dent together
-            nn = self.mid_normal_fd(u, v, noise=False) * np.where(v < 0, -1.0, 1.0)[..., None]
+                w += amp * np.sin(k[0] * u + k[1] * v + ph)
+            taper = smoothstep(0.0, 0.006, np.abs(v))  # keep the fold clean
+            nn = self.mid_normal_fd(u, v, noise=False)
             out = out + (w * taper)[..., None] * nn
         return out
-
-    def lip_normal(self, u, h=2e-5):
-        """outward normal of the outer layer along the lip line (used to separate the layers)"""
-        b0 = np.full_like(u, 1e-4)
-        pu = self.base(u + h, b0, False) - self.base(u - h, b0, False)
-        pb = self.base(u, b0 + h, False) - self.base(u, b0, False)
-        return _unit(np.cross(pu, pb))
 
     def mid_normal_fd(self, u, v, noise=True, h=3e-5):
         f = lambda a, b: self.mid(a, b, noise=noise)

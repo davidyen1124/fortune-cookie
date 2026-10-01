@@ -62,7 +62,7 @@ ob.data.materials.append(red)
 ntri = len(info["tris"])
 for i, poly in enumerate(ob.data.polygons):
     if i < 2 * ntri and i % 2 == 1:
-        poly.material_index = 2
+        poly.material_index = 0
 
 # studio
 world = bpy.data.worlds.new("w"); sc.world = world
@@ -83,12 +83,12 @@ cam = bpy.data.objects.new("c", cam_d); sc.collection.objects.link(cam); sc.came
 sc.render.resolution_x = 560; sc.render.resolution_y = 460
 tgt = Vector((cx, cy, cz))
 views = {
-    "front": (0, -1, 0.45),
-    "threequarter": (0.8, -0.8, 0.6),
-    "top": (0.0, -0.25, 1.0),
-    "back": (0.1, 1, 0.4),
-    "side": (1, 0.05, 0.3),
-    "low": (-0.35, -1, 0.12),
+    "top": (0.0, -0.02, 1.0),
+    "threequarter": (-0.75, -0.75, 0.62),
+    "front": (0.0, -1.0, 0.42),
+    "back": (0.15, 1.0, 0.35),
+    "side": (1.0, -0.05, 0.2),
+    "low": (0.55, -1.0, 0.5),
 }
 for name, d in views.items():
     dv = Vector(d).normalized() * 0.36

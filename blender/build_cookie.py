@@ -140,7 +140,7 @@ def build_textures(ck):
 
     # target colours (sRGB) from the reference photos
     c_mid_A, c_rim_A, c_spot_A = srgb("#EBC286"), srgb("#C47F36"), srgb("#DDA35A")
-    c_mid_B, c_rim_B = srgb("#EDD09A"), srgb("#CF9A50")
+    c_mid_B, c_rim_B = srgb("#EDD09A"), srgb("#D9A862")
     big = smooth_noise((H, W), 60 if not QUICK else 30, 3)        # toasting blotches
     med = smooth_noise((H, W), 14 if not QUICK else 7, 4)
     rim = cg.smoothstep(0.72, 1.0, rn) ** 1.3
@@ -303,6 +303,8 @@ def main():
     print("ao baked", ao.min(), ao.max())
     # ORM-style: R = AO, G = roughness, B = 0
     ao_full = np.repeat(np.repeat(ao, 2, 0), 2, 1)[:H, :W]
+    # the pocket is shadowed, not black: light gets in through the mouth and through the thin shell
+    ao_full = np.where(side[::-1] > 0.5, 0.42 + 0.58 * ao_full, 0.2 + 0.8 * ao_full)
     orm = np.stack([ao_full, rough[::-1], np.zeros_like(ao_full)], -1)
     save_px(orm, os.path.join(BAKED, "crust_orm.png"), "Non-Color")
 
@@ -317,21 +319,41 @@ def main():
     meta["whole"] = finish(whole, winfo, density, coll)
     print("whole: volume %.2f cm3, density %.0f kg/m3, %d tris" % (vol * 1e6, density, len(tris)))
 
-    # the crease (where the slip lies): v = 0 from the A lip over M to the B lip, and the
-    # middle of the pocket between the layers at distances s from the fold (the slip sits there)
-    uu = np.linspace(-R * 0.98, R * 0.98, 97)
-    ss = np.array([0.0, 0.0006, 0.0012, 0.002, 0.003, 0.0045, 0.006, 0.008, 0.010, 0.012, 0.014, 0.016, 0.018])
+    # the pocket between the layers (the slip is tucked in there): halfway between the shells
+    # at fold coordinate u and distance s from the fold; it runs on past the rim so the slip
+    # can stick out of the pocket mouth
+    uu = np.linspace(-R * 1.12, R * 1.12, 113)
+    ss = np.concatenate([[0.0, 0.0006, 0.0012, 0.002, 0.003, 0.0045], np.linspace(0.006, 0.048, 22)])
     U, S = np.meshgrid(uu, ss, indexing="ij")
-    pocket = 0.5 * (ck.mid(U, S) + ck.mid(U, -S))
-    crease = ck.mid(uu, np.zeros_like(uu))
+    Uc = np.clip(U, -R * 0.985, R * 0.985)
+    Wn = np.sqrt(R * R - Uc * Uc)
+    Sc = np.minimum(S, Wn * 0.995)
+    half = lambda a, b: 0.5 * (ck.mid(a, b, noise=False) + ck.mid(a, -b, noise=False))
+    pocket = half(Uc, Sc)
+    # past the rim (and past the tips) the slip carries straight on, sagging toward the table
+    d_out = half(Uc, Wn * 0.995) - half(Uc, Wn * 0.9)
+    d_out[..., 2] *= 0.25
+    # one direction for a whole stretch of rim, or the end of the slip would fan out
+    k = 23
+    pad = np.pad(d_out, ((k // 2, k // 2), (0, 0), (0, 0)), mode="edge")
+    d_out = np.stack([pad[i:i + len(uu)] for i in range(k)], 0).mean(0)
+    d_out /= np.linalg.norm(d_out, axis=-1, keepdims=True) + 1e-9
+    pocket = pocket + np.maximum(S - Sc, 0)[..., None] * d_out
+    d_tip = half(np.sign(U) * R * 0.985, Sc) - half(np.sign(U) * R * 0.9, Sc)
+    d_tip /= np.linalg.norm(d_tip, axis=-1, keepdims=True) + 1e-9
+    pocket = pocket + (np.abs(U) - np.abs(Uc))[..., None] * d_tip
     com_b = meta["whole"]["com_b"]
-    meta["crease"] = dict(u=uu.round(6).tolist(), s=ss.tolist(), p=to_three(crease - com_b).round(6).tolist(),
-                          pocket=to_three(pocket - com_b).round(6).tolist())
+    # back of the cookie on the symmetry line (the halves hinge apart about it when it snaps)
+    back = ck.mid(np.array([0.0]), np.array([R * 0.97]))[0]
+    apex = ck.mid(np.array([0.0]), np.array([0.0]))[0]
+    meta["crease"] = dict(u=uu.round(6).tolist(), s=ss.round(6).tolist(),
+                          pocket=to_three(pocket - com_b).round(5).tolist(),
+                          back=to_three(back - com_b).round(5).tolist(), apex=to_three(apex - com_b).round(5).tolist())
 
     for k in range(N_VARIANTS):
         vr = np.random.default_rng(100 + k)
-        frac = cm.fracture_line(ck, vr, offset=vr.uniform(-0.004, 0.004), tilt=vr.uniform(-0.12, 0.12),
-                                rough=vr.uniform(0.0008, 0.0016), wander=vr.uniform(0.0015, 0.004))
+        frac = cm.fracture_line(ck, vr, offset=vr.uniform(-0.002, 0.002), tilt=vr.uniform(-0.07, 0.07),
+                                rough=vr.uniform(0.0005, 0.001), wander=vr.uniform(0.001, 0.003))
         pieces = []
         for keep in ("left", "right"):
             ol, br = cm.region_outline(ck, frac, keep)

@@ -141,9 +141,9 @@ def main():
     ob.location.z -= min(zs)
     cam_d = bpy.data.cameras.new("c"); cam_d.lens = 100
     cam = bpy.data.objects.new("c", cam_d); sc.collection.objects.link(cam); sc.camera = cam
-    tgt = Vector((0, 0, 0.018))
+    tgt = Vector((0, 0, 0.012))
     import math as _m
-    az, el, d = 0.26, 0.47, 0.24
+    az, el, d = 0.5, 0.66, 0.3
     cam.location = tgt + Vector((d * _m.sin(az) * _m.cos(el), -d * _m.cos(az) * _m.cos(el), d * _m.sin(el)))
     cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
     sc.view_settings.exposure = -5.9  # the studio is in absolute units: the lit floor reads ~56
