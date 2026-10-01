@@ -1,9 +1,8 @@
 """Studio light probe for the web page: a seamless white sweep lit by a big soft key,
 a fill card and a rim strip, captured as an equirectangular HDR from where the cookie
-sits. Also writes the key light's direction so the real-time shadow matches it, and a
-Cycles reference render of the cookie in the same studio (for calibrating the page).
+sits. Also writes the key light's direction so the real-time shadow matches it.
 
-Run:  Blender -b -P build_studio.py -- [--ref]
+Run:  Blender -b -P build_studio.py
 """
 import bpy, sys, os, math, json
 from mathutils import Vector
@@ -11,7 +10,6 @@ from mathutils import Vector
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 ASSETS = os.path.join(ROOT, "public", "assets")
-RENDERS = os.path.join(ROOT, "renders")
 ARGS = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 
 # key: big softbox up and to the left, a little in front of the cookie (toward the camera, -y)
@@ -103,54 +101,12 @@ def probe(sc):
 def main():
     sc = reset()
     studio(sc)
-    if "--ref" not in ARGS:
-        probe(sc)
-        key = Vector(LIGHTS[0]["loc"]).normalized()
-        # three.js frame: (x, z, -y)
-        meta = dict(key=[key.x, key.z, -key.y], lights=[dict(name=L["name"], dir=list(Vector(L["loc"]).normalized())) for L in LIGHTS])
-        with open(os.path.join(ASSETS, "studio.json"), "w") as fh:
-            json.dump(meta, fh, indent=1)
-        print("probe done", meta["key"])
-        return
-    # reference render: the cookie from cookie.blend in the same studio
-    with bpy.data.libraries.load(os.path.join(HERE, "cookie.blend")) as (src, dst):
-        dst.objects = ["Cookie"]
-    ob = dst.objects[0]
-    sc.collection.objects.link(ob)
-    # the baked crust (same maps the page uses)
-    B = os.path.join(HERE, "baked")
-    m = bpy.data.materials.new("crust_ref")
-    nt = m.node_tree; b = nt.nodes["Principled BSDF"]
-    def img(name, cs):
-        n = nt.nodes.new("ShaderNodeTexImage"); n.image = bpy.data.images.load(os.path.join(B, name)); n.image.colorspace_settings.name = cs
-        return n
-    col = img("crust_color.png", "sRGB"); orm = img("crust_orm.png", "Non-Color"); nrm = img("crust_normal.png", "Non-Color")
-    sep = nt.nodes.new("ShaderNodeSeparateColor"); nt.links.new(orm.outputs["Color"], sep.inputs["Color"])
-    nm = nt.nodes.new("ShaderNodeNormalMap"); nm.inputs["Strength"].default_value = 0.4
-    nt.links.new(nrm.outputs["Color"], nm.inputs["Color"])
-    nt.links.new(col.outputs["Color"], b.inputs["Base Color"])
-    nt.links.new(sep.outputs["Green"], b.inputs["Roughness"])
-    nt.links.new(nm.outputs["Normal"], b.inputs["Normal"])
-    b.inputs["Subsurface Weight"].default_value = 0.25
-    b.inputs["Subsurface Radius"].default_value = (1.0, 0.55, 0.25)
-    b.inputs["Subsurface Scale"].default_value = 0.0015
-    b.inputs["Coat Weight"].default_value = 0.12
-    b.inputs["Coat Roughness"].default_value = 0.35
-    ob.data.materials.clear(); ob.data.materials.append(m); ob.data.materials.append(m)
-    zs = [(ob.matrix_world @ v.co).z for v in ob.data.vertices]
-    ob.location.z -= min(zs)
-    cam_d = bpy.data.cameras.new("c"); cam_d.lens = 100
-    cam = bpy.data.objects.new("c", cam_d); sc.collection.objects.link(cam); sc.camera = cam
-    tgt = Vector((0, 0, 0.012))
-    import math as _m
-    az, el, d = 0.5, 0.66, 0.3
-    cam.location = tgt + Vector((d * _m.sin(az) * _m.cos(el), -d * _m.cos(az) * _m.cos(el), d * _m.sin(el)))
-    cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
-    sc.view_settings.exposure = -5.9  # the studio is in absolute units: the lit floor reads ~56
-    sc.render.resolution_x = 1200; sc.render.resolution_y = 900
-    sc.cycles.samples = 256
-    sc.render.filepath = os.path.join(RENDERS, "ref_cookie.png")
-    bpy.ops.render.render(write_still=True)
-
+    probe(sc)
+    key = Vector(LIGHTS[0]["loc"]).normalized()
+    # three.js frame: (x, z, -y)
+    meta = dict(key=[key.x, key.z, -key.y], lights=[dict(name=L["name"], dir=list(Vector(L["loc"]).normalized())) for L in LIGHTS])
+    with open(os.path.join(ASSETS, "studio.json"), "w") as fh:
+        json.dump(meta, fh, indent=1)
+    print("probe done", meta["key"])
 
 main()

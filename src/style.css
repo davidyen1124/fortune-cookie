@@ -140,3 +140,20 @@ button:focus-visible { outline: 2px solid #b77a36; outline-offset: 2px; }
 @media (max-width: 380px) {
   #actions button { padding: 0 16px; font-size: 13px; }
 }
+
+#credit {
+  position: fixed;
+  left: 22px;
+  bottom: calc(8px + var(--safe-b));
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: rgba(43, 39, 35, 0.38);
+  text-decoration: none;
+  transition: opacity 0.8s ease, color 0.2s ease;
+}
+#credit:hover { color: rgba(43, 39, 35, 0.7); text-decoration: underline; }
+@media (max-width: 700px) {
+  #credit { left: 0; right: 0; text-align: center; bottom: calc(4px + var(--safe-b)); }
+  #hint { bottom: calc(34px + var(--safe-b)); }
+  #actions { bottom: calc(30px + var(--safe-b)); }
+}

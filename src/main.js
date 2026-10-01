@@ -7,7 +7,7 @@ import { createBackdrop, ContactShadows, shadowCatcher, FocusBlur, LAYER_CAST } 
 const LAYER_SLIP = 2; // drawn after the depth-of-field pass, so it stays sharp
 import { CookieAudio } from './audio.js';
 import { drawFortune, LEARN_CHINESE } from './fortunes.js';
-import { SLIP, slipTextures, wrinkled, slipGeometry, inPocket, setFiber, slipShadowTexture } from './paper.js';
+import { SLIP, slipTextures, wrinkled, slipGeometry, setFiber, slipShadowTexture } from './paper.js';
 
 const params = new URLSearchParams(location.search);
 const ASSET = import.meta.env.BASE_URL + 'assets/';
@@ -64,17 +64,15 @@ function loadImage(url) {
 
 async function loadAll() {
   const done = {};
-  const weights = { glb: 0.3, color: 0.25, normal: 0.2, orm: 0.12, hdr: 0.05, rest: 0.08 };
-  // the crust atlas at 4k where the screen can show it, 2k on phones
-  const res = !mobile && Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1) >= 1800 && !params.has('lowres') ? '4k' : '2k';
+  const weights = { glb: 0.55, color: 0.25, hdr: 0.1, rest: 0.1 };
   const rep = (k) => (v) => {
     done[k] = v * weights[k];
     const f = Object.values(done).reduce((a, b) => a + b, 0);
     progress(f, f < 0.4 ? 'Baking…' : f < 0.8 ? 'Folding…' : 'Tucking in the fortune…');
   };
   const physReady = import('./physics.js').then(async (m) => { await m.initRapier(); Phys = m; });
-  const tex = (name, key, srgb) => fetchBuf(ASSET + name, rep(key)).then(async (buf) => {
-    const bmp = await createImageBitmap(new Blob([buf], { type: 'image/webp' }), { imageOrientation: 'flipY' });
+  const tex = (name, key, srgb, flip = true) => fetchBuf(ASSET + name, rep(key)).then(async (buf) => {
+    const bmp = await createImageBitmap(new Blob([buf], { type: 'image/webp' }), flip ? { imageOrientation: 'flipY' } : {});
     const t = new THREE.Texture(bmp);
     t.flipY = false;
     t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -87,12 +85,10 @@ async function loadAll() {
     document.fonts.load('400 40px "Roboto Condensed"'),
     loadChineseFont(),
   ]).catch(() => {});
-  const [meta, glbBuf, color, normal, orm, hdr, crumbTex, fiber] = await Promise.all([
+  const [meta, glbBuf, color, hdr, crumbTex, fiber] = await Promise.all([
     fetch(ASSET + 'cookie.json').then((r) => r.json()),
     fetchBuf(ASSET + 'cookie.glb', rep('glb')),
-    tex(`crust_color_${res}.webp`, 'color', true),
-    tex('crust_normal.webp', 'normal', false),
-    tex('crust_orm.webp', 'orm', false),
+    tex('crust_color.webp', 'color', true, false), // glTF texture coordinates: no flip
     fetchBuf(ASSET + 'studio.hdr', rep('hdr')),
     tex('crumb.webp', 'rest', true),
     loadImage(ASSET + 'paper_fiber.webp'),
@@ -104,7 +100,7 @@ async function loadAll() {
   const hdrUrl = URL.createObjectURL(new Blob([hdr]));
   const env = await new HDRLoader().loadAsync(hdrUrl);
   URL.revokeObjectURL(hdrUrl);
-  return { meta, gltf, color, normal, orm, env, crumbTex, fiber, studio };
+  return { meta, gltf, color, env, crumbTex, fiber, studio };
 }
 
 /** the few CJK glyphs the Learn Chinese lessons use, as a tiny Google Fonts subset */
@@ -119,7 +115,7 @@ async function loadChineseFont() {
 }
 
 // ------------------------------------------------------------------ world
-let meta, physics, backdrop, contact, catcher, paperShadow, keyLight, crustMat, crumbMat, crustFade, crumbFade, src = {};
+let meta, physics, backdrop, contact, catcher, paperShadow, keyLight, crustMat, innerMat, crumbMat, FADE, src = {};
 const round = { whole: null, pieces: [], crumbs: [], paper: null, gen: 0 };
 const fading = []; // old rounds on their way out
 const state = {
@@ -163,31 +159,34 @@ function buildScene(parts) {
   contact = new ContactShadows(renderer, { size: 0.36, res: mobile ? 384 : 512, far: 0.022, blur: 1.1, opacity: 0.85 });
   scene.add(contact.mesh);
 
-  // materials: one crust for every piece (all share the flat-disc UV atlas)
+  // materials. The crust is the scan's own photo texture (a real cookie, photographed all
+  // round); the inside of a broken half is the same batter, paler and more matte.
   crustMat = new THREE.MeshPhysicalMaterial({
-    map: parts.color, normalMap: parts.normal, normalScale: new THREE.Vector2(0.4, 0.4),
-    roughnessMap: parts.orm, aoMap: parts.orm, aoMapIntensity: 0.9, roughness: 1, metalness: 0,
-    clearcoat: 0.12, clearcoatRoughness: 0.38, sheen: 0.25, sheenRoughness: 0.5, sheenColor: new THREE.Color('#ffc978'),
+    map: parts.color, roughness: 0.62, metalness: 0,
+    clearcoat: 0.08, clearcoatRoughness: 0.45, sheen: 0.2, sheenRoughness: 0.5, sheenColor: new THREE.Color('#ffc978'),
   });
   // Baked batter is a little translucent: light scatters through the thin shell and comes
-  // out warm, so its shadows never go grey. Approximate the subsurface glow with a warm,
-  // wrapped diffuse term plus a bit of the albedo's own colour in the shade.
-  crustMat.onBeforeCompile = (s) => {
+  // out warm, so its shadows never go grey.
+  const glow = (s) => {
     s.fragmentShader = s.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
       {
         vec3 sss = diffuseColor.rgb * diffuseColor.rgb * vec3(1.0, 0.78, 0.5);
-        reflectedLight.indirectDiffuse += sss * 0.22 * (1.0 - material.metalness);
+        reflectedLight.indirectDiffuse += sss * 0.1;
       }`);
   };
+  crustMat.onBeforeCompile = glow;
+  innerMat = new THREE.MeshStandardMaterial({ map: parts.color, color: new THREE.Color(1.18, 1.1, 0.92), roughness: 0.82, metalness: 0 });
+  innerMat.onBeforeCompile = glow;
   const ct = parts.crumbTex;
   ct.wrapS = THREE.RepeatWrapping; ct.wrapT = THREE.ClampToEdgeWrapping;
   ct.repeat.set(1, 1);
   crumbMat = new THREE.MeshStandardMaterial({ map: ct, roughness: 0.85, metalness: 0, color: 0xf6e7c8 });
   setFiber(parts.fiber);
   // see-through twins for clearing the table (compiled up front, shared by every fade)
-  crustFade = crustMat.clone(); crustFade.transparent = true;
-  crustFade.onBeforeCompile = crustMat.onBeforeCompile;
-  crumbFade = crumbMat.clone(); crumbFade.transparent = true; crumbFade.depthWrite = false;
+  FADE = new Map([crustMat, innerMat, crumbMat].map((m) => {
+    const f = m.clone(); f.transparent = true; f.onBeforeCompile = m.onBeforeCompile;
+    return [m, f];
+  }));
 
   // one node per object (a node with two primitives, crust + broken edge, loads as a group).
   // Keep the node itself: meshopt quantisation stores the dequantising scale on it.
@@ -202,7 +201,9 @@ function meshFor(name, opts = {}) {
   const node = src[name].clone();
   node.traverse((m) => {
     if (!m.isMesh) return;
-    m.material = /crumb/i.test(m.material?.name || '') ? crumbMat : crustMat;
+    const name = m.material?.name || '';
+    m.material = /crumb/i.test(name) ? crumbMat : /inner/i.test(name) ? innerMat : crustMat;
+    m.userData.solid = m.material;
     m.castShadow = true;
     m.receiveShadow = false;
     m.layers.enable(LAYER_CAST);
@@ -296,7 +297,7 @@ function crack() {
   // A fortune cookie snaps across the notch: the two arms are levered apart and the crack
   // runs from the apex of the notch to the back rim. So the halves hinge open about the back
   // of the cookie, part by a few centimetres on the table and rock to rest. No leap.
-  const hinge = new THREE.Vector3(...meta.crease.back).applyQuaternion(q0).add(p0);
+  const hinge = new THREE.Vector3(...meta.hinge.back).applyQuaternion(q0).add(p0);
   const normal = new THREE.Vector3(0, 1, 0).applyQuaternion(q0); // out of the fold plane
   const side = new THREE.Vector3(1, 0, 0).applyQuaternion(q0);
   const fwd = new THREE.Vector3(0, 0, 1).applyQuaternion(q0);
@@ -363,47 +364,39 @@ function another() {
 
 // ------------------------------------------------------------------ the slip
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _v2 = new THREE.Vector3();
-const NXV = 97; // vertices along the slip (see paper.js)
-
-function slipFrame(bent) {
-  const at = (i, j) => new THREE.Vector3(bent[(j * NXV + i) * 3], bent[(j * NXV + i) * 3 + 1], bent[(j * NXV + i) * 3 + 2]);
-  const c = at(48, 14);
-  const X = at(60, 14).sub(at(36, 14)).normalize();
-  const Y = at(48, 4).sub(at(48, 24)); // rows run from +y to -y
-  Y.addScaledVector(X, -Y.dot(X)).normalize();
-  const Z = new THREE.Vector3().crossVectors(X, Y);
-  return { c, X, Y, Z };
-}
-
 function makePaper(f) {
   const tex = slipTextures(f, rng, renderer);
   const geo = slipGeometry();
   const flat = wrinkled(rng);
-  // tucked in the pocket with one end out of the side of the cookie. Lay it the way round
-  // that leaves the print facing up and reading left to right from where the lens is, so
-  // it only has to lift and straighten, never somersault.
-  const side = rng() < 0.5 ? -1 : 1;
-  const opt = { side, angle: 0.4 + rng() * 0.1, offset: 0.0095 + rng() * 0.002, start: -0.0165 + rng() * 0.004 };
+  // The scan had a slip sticking out of the pocket; ours goes exactly there. It lies the way
+  // round that leaves the print facing up and reading left to right from the lens, so it
+  // only has to slide out and straighten, never somersault.
+  const S = meta.slip;
+  const along = new THREE.Vector3(...S.along);
   const right = new THREE.Vector3(Math.cos(cam.az), 0, -Math.sin(cam.az));
-  let best = null;
-  for (const xflip of [false, true]) for (const yflip of [false, true]) {
-    const bent = inPocket(meta.crease, flat, { ...opt, xflip, yflip });
-    const fr = slipFrame(bent);
-    if (fr.Z.y <= 0) continue;
-    const score = fr.X.dot(right);
-    if (!best || score > best.score) best = { bent, fr, score, xflip };
+  const outDir = along.dot(right) >= 0 ? 1 : -1; // which end of the slip is the one outside
+  const X = along.clone().multiplyScalar(outDir);
+  const Z = new THREE.Vector3(...S.normal);
+  if (Z.y < 0) Z.negate();
+  const Y = new THREE.Vector3().crossVectors(Z, X).normalize();
+  Z.crossVectors(X, Y);
+  const R0 = new THREE.Matrix4().makeBasis(X, Y, Z);
+  // straight, it would reach this far into the cookie; the hidden part is bunched up just
+  // inside the pocket mouth instead (it can't be seen, and the shell is not hollow until it breaks)
+  const vis = S.hi - S.lo + 0.0015;
+  const x0 = SLIP.L / 2 - vis;
+  const c = new THREE.Vector3(...S.center).addScaledVector(along, S.hi - SLIP.L / 2);
+  const bentLocal = new Float32Array(flat.length);
+  for (let k = 0; k < flat.length; k += 3) {
+    let xo = outDir * flat[k];
+    const hidden = xo < x0;
+    if (hidden) xo = x0 + (xo - x0) * 0.2;
+    bentLocal[k] = outDir * xo;
+    bentLocal[k + 1] = flat[k + 1] * (hidden ? 0.8 : 1);
+    bentLocal[k + 2] = flat[k + 2] * (hidden ? 0.3 : 1);
   }
-  const { bent, fr } = best;
-  const R0 = new THREE.Matrix4().makeBasis(fr.X, fr.Y, fr.Z);
-  const R0i = R0.clone().invert();
-  const N = bent.length / 3;
-  const bentLocal = new Float32Array(bent.length);
-  for (let k = 0; k < N; k++) {
-    _v.set(bent[k * 3], bent[k * 3 + 1], bent[k * 3 + 2]).sub(fr.c).applyMatrix4(R0i);
-    bentLocal[k * 3] = _v.x; bentLocal[k * 3 + 1] = _v.y; bentLocal[k * 3 + 2] = _v.z;
-  }
-  // which way is "out of the pocket" along the slip
-  const outDir = best.xflip ? -1 : 1;
+  const fr = { c };
+  const side = S.center[0] < 0 ? -1 : 1; // which half it is tucked into
   // transparent from the start, so fading it out later doesn't recompile its shader
   const frontMat = new THREE.MeshStandardMaterial({ map: tex.front, roughness: 0.88, metalness: 0, side: THREE.FrontSide, transparent: true });
   const backMat = new THREE.MeshStandardMaterial({ map: tex.back, roughness: 0.88, metalness: 0, side: THREE.BackSide, transparent: true });
@@ -620,15 +613,15 @@ function advance(dt) {
 function setOpacity(g, o) {
   g.traverse((m) => {
     if (!m.isMesh) return;
-    if (!m.userData.fade) { m.material = m.material === crumbMat ? crumbFade : crustFade; m.userData.fade = true; }
+    if (!m.userData.fade) { m.material = FADE.get(m.userData.solid); m.userData.fade = true; }
     m.castShadow = false;
   });
-  crustFade.opacity = crumbFade.opacity = o;
+  for (const f of FADE.values()) f.opacity = o;
 }
 function restoreOpaque(g) {
   g.traverse((m) => {
     if (!m.isMesh || !m.userData.fade) return;
-    m.material = m.material === crumbFade ? crumbMat : crustMat;
+    m.material = m.userData.solid;
     m.userData.fade = false;
     m.castShadow = true;
   });
@@ -766,7 +759,7 @@ $('btnSound').addEventListener('click', () => {
       // compile the fade materials now rather than at the first "another cookie"
       // (and the broken-edge material, first seen at the first crack)
       const box = new THREE.BoxGeometry(0.001, 0.001, 0.001);
-      const probes = [crustFade, crumbFade, crumbMat].map((m) => { const o = new THREE.Mesh(box, m); o.position.set(0, 0.02, 0); o.castShadow = true; return o; });
+      const probes = [...FADE.values(), crumbMat, innerMat].map((m) => { const o = new THREE.Mesh(box, m); o.position.set(0, 0.02, 0); o.castShadow = true; return o; });
       scene.add(...probes);
       renderer.shadowMap.needsUpdate = true;
       renderer.compile(scene, camera);
@@ -778,6 +771,7 @@ $('btnSound').addEventListener('click', () => {
     $('loading').classList.add('hidden');
     $('brand').classList.remove('hidden');
     $('btnSound').classList.remove('hidden');
+    $('credit').classList.remove('hidden');
     requestAnimationFrame((t) => { last = t; frame(t); });
   } catch (err) {
     console.error(err);
