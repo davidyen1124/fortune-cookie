@@ -754,7 +754,6 @@ $('btnSound').addEventListener('click', () => {
     }
     render();
     $('loading').classList.add('hidden');
-    $('brand').classList.remove('hidden');
     $('btnSound').classList.remove('hidden');
     $('credit').classList.remove('hidden');
     requestAnimationFrame((t) => { last = t; frame(t); });
