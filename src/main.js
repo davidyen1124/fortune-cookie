@@ -162,7 +162,7 @@ function buildScene(parts) {
   // materials. The crust is the scan's own photo texture (a real cookie, photographed all
   // round); the inside of a broken half is the same batter, paler and more matte.
   crustMat = new THREE.MeshPhysicalMaterial({
-    map: parts.color, roughness: 0.62, metalness: 0,
+    map: parts.color, roughness: 0.62, metalness: 0, side: THREE.DoubleSide,
     clearcoat: 0.08, clearcoatRoughness: 0.45, sheen: 0.2, sheenRoughness: 0.5, sheenColor: new THREE.Color('#ffc978'),
   });
   // Baked batter is a little translucent: light scatters through the thin shell and comes
@@ -263,8 +263,8 @@ function aimCamera(dt) {
 function newCookie(drop = 0.006, fadeIn = true) {
   state.count++;
   if (state.seed != null) rng = Phys.mulberry32(state.seed + state.count * 7919);
-  // lying as it was folded, the tips and the notch toward the lens, give or take
-  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, cam.az * 0.6 + (rng() - 0.5) * 0.5, 0, 'YXZ'));
+  // turned so the lens sees its smooth side and the notch; the chipped stretch of rim faces away
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, cam.az - 1.05 + (rng() - 0.5) * 0.3, 0, 'YXZ'));
   let minY = Infinity;
   const v = new THREE.Vector3();
   for (const h of meta.whole.hulls) for (const p of h) { v.set(p[0], p[1], p[2]).applyQuaternion(q); minY = Math.min(minY, v.y); }
@@ -368,35 +368,24 @@ function makePaper(f) {
   const tex = slipTextures(f, rng, renderer);
   const geo = slipGeometry();
   const flat = wrinkled(rng);
-  // The scan had a slip sticking out of the pocket; ours goes exactly there. It lies the way
-  // round that leaves the print facing up and reading left to right from the lens, so it
-  // only has to slide out and straighten, never somersault.
-  const S = meta.slip;
-  const along = new THREE.Vector3(...S.along);
-  const right = new THREE.Vector3(Math.cos(cam.az), 0, -Math.sin(cam.az));
-  const outDir = along.dot(right) >= 0 ? 1 : -1; // which end of the slip is the one outside
-  const X = along.clone().multiplyScalar(outDir);
-  const Z = new THREE.Vector3(...S.normal);
-  if (Z.y < 0) Z.negate();
-  const Y = new THREE.Vector3().crossVectors(Z, X).normalize();
-  Z.crossVectors(X, Y);
-  const R0 = new THREE.Matrix4().makeBasis(X, Y, Z);
-  // straight, it would reach this far into the cookie; the hidden part is bunched up just
-  // inside the pocket mouth instead (it can't be seen, and the shell is not hollow until it breaks)
-  const vis = S.hi - S.lo + 0.0015;
-  const x0 = SLIP.L / 2 - vis;
-  const c = new THREE.Vector3(...S.center).addScaledVector(along, S.hi - SLIP.L / 2);
+  // Inside the cookie the slip lies along the fold: a band standing on edge, wrapped round
+  // the apex of the notch with an end in each arm's pocket. Nothing of it shows until the
+  // cookie is cracked; then it bridges the two halves, the print facing the lens.
+  const rho = 0.011;
+  const A = meta.hinge.apex;
+  const c = new THREE.Vector3(A[0], A[1], A[2] + 0.001 - rho);
   const bentLocal = new Float32Array(flat.length);
   for (let k = 0; k < flat.length; k += 3) {
-    let xo = outDir * flat[k];
-    const hidden = xo < x0;
-    if (hidden) xo = x0 + (xo - x0) * 0.2;
-    bentLocal[k] = outDir * xo;
-    bentLocal[k + 1] = flat[k + 1] * (hidden ? 0.8 : 1);
-    bentLocal[k + 2] = flat[k + 2] * (hidden ? 0.3 : 1);
+    // crumpled a little shorter and narrower than it is, so it stays clear of the shell
+    const th = (flat[k] * 0.5) / rho;
+    bentLocal[k] = rho * Math.sin(th);
+    bentLocal[k + 1] = flat[k + 1] * 0.5;
+    bentLocal[k + 2] = rho * (1 - Math.cos(th)) + flat[k + 2] * 0.5;
   }
   const fr = { c };
-  const side = S.center[0] < 0 ? -1 : 1; // which half it is tucked into
+  const R0 = new THREE.Matrix4(); // the slip's axes are the cookie's: across, up, toward the tips
+  const side = rng() < 0.5 ? -1 : 1; // the half it stays in when the cookie snaps
+  const outDir = -side; // and it is drawn out toward the gap
   // transparent from the start, so fading it out later doesn't recompile its shader
   const frontMat = new THREE.MeshStandardMaterial({ map: tex.front, roughness: 0.88, metalness: 0, side: THREE.FrontSide, transparent: true });
   const backMat = new THREE.MeshStandardMaterial({ map: tex.back, roughness: 0.88, metalness: 0, side: THREE.BackSide, transparent: true });
@@ -427,13 +416,9 @@ function setShape(P, e) {
   P.geo.computeBoundingSphere();
 }
 
-/** the slip's pose while it is still inside the whole cookie (follows the cookie) */
-function paperInCookie(P, whole) {
-  const g = P.group;
-  g.visible = true;
-  const s = whole.mesh;
-  g.position.copy(P.frame0.c).applyQuaternion(s.quaternion).add(s.position);
-  g.quaternion.copy(s.quaternion).multiply(P.frame0.q);
+/** while the cookie is whole the slip is inside it, out of sight */
+function paperInCookie(P) {
+  P.group.visible = false;
   setShape(P, 0);
 }
 
@@ -469,7 +454,7 @@ const T_HOLD = 0.35, T_PULL = 0.55, T_UP = 0.85;
 function updatePaper(P, dt, time) {
   if (!P) return;
   if (!P.released) {
-    if (round.whole && round.paper === P) paperInCookie(P, round.whole);
+    paperInCookie(P);
     return;
   }
   P.t += dt;

@@ -250,8 +250,29 @@ def main():
     for comp in loose:
         bmesh.ops.delete(bm, geom=comp, context="FACES")
     print("removed", len(gone), "slip faces and", len(loose), "loose bits")
+    # close the opening the slip left, and any other gap in the scan, so the shell is whole.
+    # Each patch triangle takes the colour of the crust at its edge (one texel per triangle:
+    # the patch bridges different texture islands, so it can't interpolate between them).
+    old_faces = set(bm.faces)
+    be = [e for e in bm.edges if e.is_boundary]
+    filled = bmesh.ops.holes_fill(bm, edges=be, sides=0)["faces"]
+    tri = bmesh.ops.triangulate(bm, faces=filled)["faces"] if filled else []
+    for f in tri:
+        src_uv = None
+        for l in f.loops:
+            for ol in l.vert.link_loops:
+                if ol.face in old_faces:
+                    src_uv = ol[uv_layer].uv.copy(); break
+            if src_uv is not None:
+                break
+        if src_uv is None:
+            continue
+        for l in f.loops:
+            l[uv_layer].uv = src_uv
+    print("closed", len(be), "open edges with", len(tri), "patch triangles;", sum(1 for e in bm.edges if e.is_boundary), "left open")
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(me); bm.free()
+    me.validate(clean_customdata=False)
     me.update()
 
     # ---- lighter mesh for the web (the detail is in the photo texture)

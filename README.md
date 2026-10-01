@@ -9,9 +9,9 @@
 
 ## What it does
 
-1. A fortune cookie sits on a seamless white studio table, with the end of its slip poking out of the pocket.
+1. A fortune cookie sits on a seamless white studio table. The slip is inside it.
 2. Tap it. It snaps across the notch, the way a real one does: the two arms hinge apart, slide a few centimetres and rock to rest, and crumbs spill from the break.
-3. The slip is drawn out of the half it was tucked into, straightens, and comes up to you while the table behind goes softly out of focus. It's a 57 × 16 mm slip in Wonton-Food blue, with lucky numbers on the front and a Learn Chinese lesson on the back. Tap the slip, or press **Turn over**, to read the back.
+3. The slip, which was wrapped round the notch inside, shows in the broken half, is drawn out, straightens, and comes up to you while the table behind goes softly out of focus. It's a 57 × 16 mm slip in Wonton-Food blue, with lucky numbers on the front and a Learn Chinese lesson on the back. Tap the slip, or press **Turn over**, to read the back.
 4. **Another cookie** clears the table and sets down a new one. Fortunes don't repeat until you've read the last 60.
 
 ## How it's made
@@ -20,13 +20,13 @@
 - **Blender** ([`blender/build_scan.py`](blender/build_scan.py)) prepares the scan:
   - welds its texture islands into one surface and finds the cookie's own frame from its mirror symmetry (across the arms, shell normal, toward the tips)
   - scales it to life size using the slip in the scan, which comes out about 50 mm across
-  - lifts the scanned slip stub off the mesh, so the page can put its own printed slip in the same place
+  - lifts the scanned slip stub off the mesh and closes the shell where it was, so the cookie starts whole with the slip hidden inside
   - cuts the shell into two hollow halves along a chipped line across the notch, four different ways, and gives them a wall thickness and a broken edge
   - exports the meshes (glTF, meshopt-compressed), convex-hull colliders, each piece's mass and inertia (the cookie weighs 8 g), the break lines and where the slip sits
   - [`blender/build_studio.py`](blender/build_studio.py) renders the studio (a white sweep, softboxes) into the HDR light probe the page is lit with.
 - **Textures:** the crust is the scan's own photo texture. The broken edge and the paper fibre are macro scans made with the Codex CLI `imagegen` skill (`art/imagegen/`), as are the favicon and social card.
 - **Physics:** [Rapier](https://rapier.rs) at 240 Hz. The halves and the crumbs are real rigid bodies with baked-batter friction and bounce, plus a little air drag, since an 8 g shell is mostly air. The snap is an impulse that levers the two arms apart about the back of the cookie. After that it's all simulation.
-- **The slip isn't simulated.** It's animated on purpose: it rides in its half for a beat, slides out of the pocket the way it was pointing, and comes up to the reader. It keeps the creases it got in the cookie (faceted folds, a few crinkles, a curl) and is printed like the real thing:
+- **The slip isn't simulated.** It's animated on purpose: hidden inside until the snap, it rides in its half for a beat, slides out toward the gap, and comes up to the reader. It keeps the creases it got in the cookie (faceted folds, a few crinkles, a curl) and is printed like the real thing:
   - condensed bold sans in blue, a register tab, and "Lucky Numbers" with six numbers from 1 to 56 in draw order
   - on the back, a Learn Chinese word in simplified characters with tone-marked pinyin
   - each side faintly shows through the other
@@ -66,4 +66,4 @@ The Vercel project `fortune-cookie` is connected to this repository: every push 
 
 ## Credits
 
-- Cookie model: "Fortune Cookie" by [Frank McMains](https://sketchfab.com/frankmcmains), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Modified here: rescaled and re-oriented, simplified, slip removed, cut into halves.
+- Cookie model: "Fortune Cookie" by [Frank McMains](https://sketchfab.com/frankmcmains), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Modified here: rescaled and re-oriented, simplified, slip removed and the shell closed, cut into halves.
