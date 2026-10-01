@@ -106,12 +106,12 @@ async function loadAll() {
 /** the few CJK glyphs the Learn Chinese lessons use, as a tiny Google Fonts subset */
 async function loadChineseFont() {
   const chars = [...new Set(LEARN_CHINESE.map((e) => e.zh).join(''))].join('');
-  const href = `https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500&text=${encodeURIComponent(chars)}&display=swap`;
+  const href = `https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@500&text=${encodeURIComponent(chars)}&display=swap`;
   const link = document.createElement('link');
   link.rel = 'stylesheet'; link.href = href;
   document.head.appendChild(link);
   await new Promise((r) => { link.onload = r; link.onerror = r; });
-  await document.fonts.load('500 40px "Noto Sans SC"', chars.slice(0, 4));
+  await document.fonts.load('500 40px "Noto Sans TC"', chars.slice(0, 4));
 }
 
 // ------------------------------------------------------------------ world

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // A US restaurant fortune slip: 57 x 16 mm, thin white bond, blue ink (Wonton Food style).
 // Front: the fortune in a condensed bold sans with the lucky numbers under it.
-// Back: the "Learn Chinese" lesson. Each side shows through the other, mirrored.
+// Back: the "Learn Chinese" lesson (traditional characters). Each side shows through the other, mirrored.
 export const SLIP = { L: 0.057, W: 0.016 };
 const INK = '#27479b';
 const PAPER = '#f8f7f2';
@@ -131,7 +131,7 @@ function drawBack(ctx, f, rng) {
     const zh = [...f.learn.zh], py = f.learn.py.split(' ');
     const parts = zh.map((c, i) => [c, `(${py[i] || ''})`]);
     // measure the mixed run: character, then pinyin in the Latin face
-    const cjk = `500 120px "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif`;
+    const cjk = `500 120px "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Heiti TC", sans-serif`;
     const lat = `400 88px "Roboto Condensed", "Arial Narrow", sans-serif`;
     let w = 0;
     const gap = 26;

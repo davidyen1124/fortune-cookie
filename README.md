@@ -28,7 +28,7 @@
 - **Physics:** [Rapier](https://rapier.rs) at 240 Hz. The halves and the crumbs are real rigid bodies with baked-batter friction and bounce, plus a little air drag, since an 8 g shell is mostly air. The snap is an impulse that levers the two arms apart about the back of the cookie. After that it's all simulation.
 - **The slip isn't simulated.** It's animated on purpose: hidden inside until the snap, it rides in its half for a beat, slides out toward the gap, and comes up to the reader. It keeps the creases it got in the cookie (faceted folds, a few crinkles, a curl) and is printed like the real thing:
   - condensed bold sans in blue, a register tab, and "Lucky Numbers" with six numbers from 1 to 56 in draw order
-  - on the back, a Learn Chinese word in simplified characters with tone-marked pinyin
+  - on the back, a Learn Chinese word in traditional characters with tone-marked pinyin
   - each side faintly shows through the other
 - **Fortunes:** 246 of them in [`src/fortunes.js`](src/fortunes.js), written in the house style after reading a few hundred real slips. The 138 Learn Chinese entries were checked against CC-CEDICT.
 - **Sound:** no audio files. The crack is a sharp broadband snap followed by a scatter of micro-fractures. Each landing makes a hollow tap, and each crumb a tiny tick, all driven by the physics contact impulses. The slip rustles when it comes out.
