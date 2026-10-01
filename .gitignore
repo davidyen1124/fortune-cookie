@@ -6,6 +6,6 @@ blender/*.blend
 blender/*.blend1
 blender/baked
 blender/__pycache__
-.vercel
 .DS_Store
 test-results
+.vercel
