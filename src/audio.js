@@ -35,6 +35,8 @@ export class CookieAudio {
   #build() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
+    // An iPhone's silent switch mutes Web Audio unless the page asks for a playback session.
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* ignored */ }
     const ctx = (this.ctx = new AC({ latencyHint: 'interactive' }));
     this.master = ctx.createGain();
     this.master.gain.value = this.enabled ? 0.9 : 0;
